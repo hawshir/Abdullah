@@ -1,69 +1,43 @@
-import { useLayoutEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef } from "react";
+import SplitText from "./SplitText";
+import Reveal from "./Reveal";
 import { gsap } from "../lib/gsap";
-import Chars from "./Chars";
 
-export default function SectionHeading({ text, className = "" }: { text: string; className?: string }) {
-  const ref = useRef<HTMLHeadingElement>(null);
-  useLayoutEffect(() => {
+type Props = { title: string; sub?: string };
+
+export default function SectionHeading({ title, sub }: Props) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  // gentle scroll parallax
+  useEffect(() => {
     const el = ref.current;
     if (!el) return;
     const ctx = gsap.context(() => {
       gsap.fromTo(
-        el.querySelectorAll(".ch"),
-        { opacity: 0, y: "0.6em", filter: "blur(9px)" },
+        el,
+        { y: 26 },
         {
-          opacity: 1,
-          y: 0,
-          filter: "blur(0px)",
-          duration: 1.3,
-          stagger: 0.035,
-          ease: "lux",
-          clearProps: "filter,transform",
-          scrollTrigger: { trigger: el, start: "top 88%", once: true },
-        }
+          y: -26,
+          ease: "none",
+          scrollTrigger: { trigger: el.parentElement ?? el, start: "top bottom", end: "bottom top", scrub: true },
+        },
       );
     }, el);
     return () => ctx.revert();
   }, []);
-  return (
-    <h2 ref={ref} aria-label={text} className={`sec-heading ${className}`}>
-      <Chars text={text} />
-    </h2>
-  );
-}
 
-/** Fade + rise on scroll-in. */
-export function Rise({
-  children,
-  className = "",
-  delay = 0,
-  as: Tag = "div",
-}: {
-  children: ReactNode;
-  className?: string;
-  delay?: number;
-  as?: "div" | "p" | "span";
-}) {
-  const ref = useRef<HTMLElement>(null);
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const ctx = gsap.context(() => {
-      gsap.from(el, {
-        opacity: 0,
-        y: 36,
-        duration: 1.5,
-        delay,
-        ease: "lux",
-        scrollTrigger: { trigger: el, start: "top 92%", once: true },
-      });
-    }, el);
-    return () => ctx.revert();
-  }, [delay]);
-  const T = Tag as "div";
   return (
-    <T ref={ref as React.RefObject<HTMLDivElement>} className={className}>
-      {children}
-    </T>
+    <div ref={ref} className="mx-auto max-w-md px-6 text-center">
+      <SplitText
+        as="h2"
+        text={title}
+        className="font-display text-[clamp(2rem,9vw,3.2rem)] font-bold leading-[1.15] tracking-[0.04em] text-ivory"
+      />
+      {sub ? (
+        <Reveal delay={0.35}>
+          <p className="mt-4 text-[15.5px] leading-relaxed text-ivory/70">{sub}</p>
+        </Reveal>
+      ) : null}
+    </div>
   );
 }

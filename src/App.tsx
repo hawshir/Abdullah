@@ -1,43 +1,54 @@
-import { lazy, Suspense, useCallback, useEffect, useState } from "react";
-import Background from "./components/Background";
+import { Suspense, lazy, useCallback, useEffect, useState } from "react";
+import { Background, Grain } from "./components/Background";
 import Gate from "./components/Gate";
-import { loadExperience } from "./lib/loaders";
+import SoundToggle from "./components/SoundToggle";
+import { music } from "./lib/audio";
+import { vibrate } from "./lib/device";
 
-const Experience = lazy(loadExperience);
+// heavy animation code is only fetched/executed after the unlock tap
+const Experience = lazy(() => import("./components/Experience"));
+
+type Stage = "gate" | "reveal" | "done";
 
 export default function App() {
-  const [open, setOpen] = useState(false);
-  const [gateGone, setGateGone] = useState(false);
+  const [stage, setStage] = useState<Stage>("gate");
 
-  // lock scroll while the gate is up
+  // lock page scroll while the gate is up
   useEffect(() => {
-    document.documentElement.classList.add("lock");
-    return () => document.documentElement.classList.remove("lock");
-  }, []);
+    const root = document.documentElement;
+    root.style.overflow = stage === "done" ? "" : "hidden";
+    if (stage === "reveal") window.scrollTo(0, 0);
+  }, [stage]);
 
-  // pause CSS animations when the tab is hidden
+  // pause animations + audio when the tab is hidden
   useEffect(() => {
-    const f = () => document.documentElement.classList.toggle("paused", document.hidden);
-    document.addEventListener("visibilitychange", f);
-    return () => document.removeEventListener("visibilitychange", f);
+    const onVis = () => {
+      const hidden = document.hidden;
+      document.documentElement.classList.toggle("tab-hidden", hidden);
+      music.setHidden(hidden);
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
   }, []);
 
-  const onUnlock = useCallback(() => setOpen(true), []);
-  const onDone = useCallback(() => {
-    setGateGone(true);
-    document.documentElement.classList.remove("lock");
-    window.scrollTo(0, 0);
+  const onUnlockTap = useCallback(() => {
+    music.start();
+    vibrate(30);
   }, []);
+  const onReveal = useCallback(() => setStage((s) => (s === "gate" ? "reveal" : s)), []);
+  const onDone = useCallback(() => setStage("done"), []);
 
   return (
     <>
       <Background />
-      {open && (
+      {stage !== "gate" && (
         <Suspense fallback={null}>
           <Experience />
         </Suspense>
       )}
-      {!gateGone && <Gate onUnlock={onUnlock} onDone={onDone} />}
+      {stage !== "done" && <Gate onUnlockTap={onUnlockTap} onReveal={onReveal} onDone={onDone} />}
+      {stage !== "gate" && <SoundToggle />}
+      <Grain />
     </>
   );
 }

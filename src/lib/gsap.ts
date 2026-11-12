@@ -1,10 +1,10 @@
-import { gsap } from "gsap";
+import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
-import { ScrollToPlugin } from "gsap/ScrollToPlugin";
 import { CustomEase } from "gsap/CustomEase";
+import { ScrollToPlugin } from "gsap/ScrollToPlugin";
 
-gsap.registerPlugin(ScrollTrigger, ScrollToPlugin, CustomEase);
+gsap.registerPlugin(ScrollTrigger, CustomEase, ScrollToPlugin);
+CustomEase.create("lux", "0.22,1,0.36,1");
 ScrollTrigger.config({ ignoreMobileResize: true });
-CustomEase.create("lux", ".22,1,.36,1");
 
 export { gsap, ScrollTrigger };

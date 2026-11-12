@@ -1,81 +1,124 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties } from "react";
+import SplitText from "./SplitText";
 import { gsap } from "../lib/gsap";
-import Chars from "./Chars";
 
-function useCountdown() {
-  const calc = () => {
-    const now = new Date();
-    if (now.getMonth() === 10 && now.getDate() === 30) return null;
-    let target = new Date(now.getFullYear(), 10, 30, 0, 0, 0, 0);
-    if (target.getTime() <= now.getTime()) target = new Date(now.getFullYear() + 1, 10, 30, 0, 0, 0, 0);
-    const s = Math.max(0, Math.floor((target.getTime() - now.getTime()) / 1000));
-    return { d: Math.floor(s / 86400), h: Math.floor((s % 86400) / 3600), m: Math.floor((s % 3600) / 60), s: s % 60 };
+function getCountdown(now: Date) {
+  if (now.getMonth() === 10 && now.getDate() === 30) return null; // the day itself
+  const year = now.getMonth() > 10 ? now.getFullYear() + 1 : now.getFullYear();
+  const target = new Date(year, 10, 30, 0, 0, 0, 0);
+  let diff = Math.max(0, target.getTime() - now.getTime());
+  const s = Math.floor(diff / 1000);
+  diff = s;
+  return {
+    d: Math.floor(diff / 86400),
+    h: Math.floor((diff % 86400) / 3600),
+    m: Math.floor((diff % 3600) / 60),
+    s: diff % 60,
   };
-  const [v, setV] = useState(calc);
-  useEffect(() => {
-    const id = window.setInterval(() => setV(calc()), 1000);
-    return () => window.clearInterval(id);
-  }, []);
-  return v;
 }
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
-function Orbit() {
-  const dots = useMemo(() => {
-    const mk = (n: number, r: number, size: number) =>
-      Array.from({ length: n }, (_, i) => ({
-        a: (i / n) * 360 + Math.random() * 14,
-        r: r + (Math.random() - 0.5) * 14,
-        s: size + Math.random() * 1.6,
-        d: -Math.random() * 3,
-      }));
-    return { a: mk(9, 132, 2.6), b: mk(7, 168, 2) };
+function Countdown() {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const t = window.setInterval(() => setNow(new Date()), 1000);
+    return () => window.clearInterval(t);
   }, []);
-  const style = { transform: "rotate(-14deg) scaleY(0.52)" };
+  const c = getCountdown(now);
+
+  if (!c) {
+    return (
+      <p className="font-display text-[clamp(1.15rem,5.4vw,1.7rem)] font-bold leading-snug tracking-[0.1em] text-gold">
+        IT'S OFFICIALLY YOUR DAY, AREEBA 👑
+      </p>
+    );
+  }
+  const num = "mx-0.5 inline-block min-w-[1.4ch] font-bold tabular-nums text-gold";
   return (
-    <div aria-hidden="true" className="absolute inset-0 pointer-events-none" style={style}>
-      <div className="orbit">
-        {dots.a.map((d, i) => (
-          <i key={i} className="orbit-dot" style={{ "--a": `${d.a}deg`, "--r": `${d.r}px`, "--s": `${d.s}px`, "--d": `${d.d}s` } as CSSProperties} />
-        ))}
-      </div>
-      <div className="orbit rev">
-        {dots.b.map((d, i) => (
-          <i key={i} className="orbit-dot" style={{ "--a": `${d.a}deg`, "--r": `${d.r}px`, "--s": `${d.s}px`, "--d": `${d.d}s` } as CSSProperties} />
-        ))}
-      </div>
-    </div>
+    <p className="text-[15px] leading-loose tracking-wide text-ivory/80">
+      your day arrives in <span className={num}>{c.d}</span> d <span className={num}>{pad(c.h)}</span> h{" "}
+      <span className={num}>{pad(c.m)}</span> m <span className={num}>{pad(c.s)}</span> s
+    </p>
+  );
+}
+
+function Orbit() {
+  const rings = useMemo(
+    () => [
+      { inset: "0%", dur: 34, rev: false, count: 5, size: 9 },
+      { inset: "12%", dur: 26, rev: true, count: 4, size: 7 },
+      { inset: "24%", dur: 19, rev: false, count: 3, size: 6 },
+    ],
+    [],
+  );
+  return (
+    <>
+      {rings.map((r, ri) => (
+        <div
+          key={ri}
+          aria-hidden="true"
+          className="absolute"
+          style={{
+            inset: r.inset,
+            animation: `orbit ${r.dur}s linear infinite${r.rev ? " reverse" : ""}`,
+            willChange: "transform",
+          }}
+        >
+          {Array.from({ length: r.count }).map((_, i) => (
+            <span key={i} className="absolute inset-0" style={{ transform: `rotate(${(360 / r.count) * i + ri * 23}deg)` }}>
+              <i
+                className="absolute left-1/2 top-0 block bg-gold"
+                style={
+                  {
+                    width: r.size,
+                    height: r.size,
+                    marginLeft: -r.size / 2,
+                    marginTop: -r.size / 2,
+                    clipPath: "polygon(50% 0,62% 38%,100% 50%,62% 62%,50% 100%,38% 62%,0 50%,38% 38%)",
+                    filter: "drop-shadow(0 0 4px rgba(245,215,110,.9))",
+                    animation: `twinkle ${2.2 + i * 0.6}s ease-in-out infinite`,
+                    animationDelay: `${-(i * 0.7 + ri * 0.4)}s`,
+                  } as CSSProperties
+                }
+              />
+            </span>
+          ))}
+        </div>
+      ))}
+    </>
   );
 }
 
 export default function Hero() {
   const root = useRef<HTMLElement>(null);
-  const cd = useCountdown();
+  const inner = useRef<HTMLDivElement>(null);
+  const nineteen = useRef<HTMLDivElement>(null);
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     const el = root.current;
     if (!el) return;
     const ctx = gsap.context(() => {
-      const q = gsap.utils.selector(el);
-      const from = { opacity: 0, y: "0.55em", filter: "blur(12px)" };
-      const to = { opacity: 1, y: 0, filter: "blur(0px)", duration: 1.3, ease: "lux", stagger: 0.04, clearProps: "filter,transform" };
-      gsap
-        .timeline({ delay: 1.0 })
-        .fromTo(q(".h-small .ch"), from, to)
-        .fromTo(q(".h-big .ch"), from, to, "-=1.1")
-        .fromTo(q(".h-name .ch"), from, to, "-=1.0")
-        .fromTo(q(".h-19"), { opacity: 0, scale: 0.86, filter: "blur(14px)" }, { opacity: 1, scale: 1, filter: "blur(0px)", duration: 2, ease: "lux", clearProps: "filter,transform" }, "-=0.9")
-        .fromTo(q(".h-count, .h-cue"), { opacity: 0, y: 18 }, { opacity: 1, y: 0, duration: 1.3, ease: "lux", stagger: 0.25 }, "-=1.2");
-
-      // gentle scroll parallax
-      gsap.to(q(".h-content"), {
-        y: -70,
-        opacity: 0.05,
+      // intro choreography (letters are driven by SplitText)
+      gsap.fromTo(
+        ".hero-fade",
+        { opacity: 0, y: 24 },
+        { opacity: 1, y: 0, duration: 1.8, ease: "lux", stagger: 0.25, delay: 2.5 },
+      );
+      gsap.fromTo(
+        nineteen.current,
+        { opacity: 0, scale: 0.86 },
+        { opacity: 1, scale: 1, duration: 2.2, ease: "lux", delay: 2.0 },
+      );
+      // parallax on scroll
+      gsap.to(inner.current, {
+        yPercent: -9,
+        opacity: 0.15,
         ease: "none",
-        scrollTrigger: { trigger: el, start: "top top", end: "bottom 15%", scrub: true },
+        scrollTrigger: { trigger: el, start: "top top", end: "bottom top", scrub: true },
       });
-      gsap.to(q(".h-19w"), {
+      gsap.to(nineteen.current, {
         y: -50,
         ease: "none",
         scrollTrigger: { trigger: el, start: "top top", end: "bottom top", scrub: true },
@@ -85,57 +128,59 @@ export default function Hero() {
   }, []);
 
   return (
-    <section id="hero" ref={root} className="relative flex min-h-[100svh] flex-col items-center justify-center overflow-hidden px-5 pb-24 pt-16 text-center">
-      <div className="h-content flex w-full flex-col items-center">
-        <p
-          className="h-small mb-6 max-w-[23rem] font-body text-[0.74rem] font-semibold leading-relaxed text-gold/85"
-          style={{ letterSpacing: "0.1em" }}
-          aria-label="30 · 11 · 2007 — the day the world got lucky"
-        >
-          <Chars text="30 · 11 · 2007 — the day the world got lucky" />
-        </p>
+    <section id="hero" ref={root} className="flex flex-col items-center justify-center px-5 pb-24 pt-20 text-center">
+      <div ref={inner} className="flex w-full max-w-xl flex-col items-center">
+        <SplitText
+          as="p"
+          reveal="mount"
+          delay={0.9}
+          stagger={0.04}
+          text="30 · 11 · 2007 — the day the world got lucky"
+          className="max-w-[20rem] text-[13px] leading-relaxed tracking-[0.16em] text-ivory/75"
+        />
 
-        <h1 aria-label="HAPPY BIRTHDAY AREEBA" className="flex flex-col items-center">
-          <span
-            className="h-big block font-display font-black text-ivory"
-            style={{ fontSize: "clamp(1.5rem,7.5vw,3.4rem)", letterSpacing: "0.1em", textShadow: "0 0 30px rgba(245,215,110,.25)" }}
-          >
-            <Chars text="HAPPY BIRTHDAY" />
-          </span>
-          <span className="h-name mt-1 block font-display font-black leading-[1.1]" style={{ fontSize: "clamp(3rem,16vw,6.6rem)", letterSpacing: "0.07em" }}>
-            <Chars text="AREEBA" gold />
-          </span>
-        </h1>
+        <SplitText
+          as="h1"
+          reveal="mount"
+          delay={1.4}
+          text="HAPPY BIRTHDAY"
+          className="mt-6 font-display text-[clamp(2.2rem,11.6vw,5rem)] font-black leading-[1.05] tracking-[0.1em] text-ivory"
+        />
+        <div className="gold-glow mt-1">
+          <SplitText
+            as="p"
+            gold
+            reveal="mount"
+            delay={1.9}
+            text="AREEBA"
+            className="font-display text-[clamp(3rem,16vw,8rem)] font-black leading-[1.05] tracking-[0.08em]"
+          />
+        </div>
 
-        <div className="h-19w relative my-5 grid w-full place-items-center" style={{ height: "clamp(9rem,44vw,16rem)" }}>
+        <div ref={nineteen} className="relative mt-8 flex aspect-square w-[min(78vw,330px)] items-center justify-center opacity-0">
           <Orbit />
-          <div className="h-19 relative" style={{ opacity: 0 }}>
-            <span className="gold-num block font-display font-bold leading-none" style={{ fontSize: "clamp(7.5rem,40vw,13rem)", letterSpacing: "-0.02em" }}>
+          <span
+            aria-hidden="true"
+            className="absolute h-[55%] w-[55%] rounded-full"
+            style={{ background: "radial-gradient(closest-side, rgba(245,215,110,.22), transparent 72%)" }}
+          />
+          <div className="gold-glow relative font-display text-[clamp(6.5rem,36vw,13rem)] font-black italic leading-none">
+            <span className="gold-text" aria-label="19" style={{ "--i": 3 } as CSSProperties}>
               19
             </span>
           </div>
         </div>
 
-        <div className="h-count mt-5 font-body font-semibold text-ivory/85" style={{ opacity: 0 }}>
-          {cd ? (
-            <p className="text-[0.98rem] leading-loose">
-              your day arrives in{" "}
-              <b className="font-bold tabular-nums text-gold">{cd.d}</b> d{" "}
-              <b className="font-bold tabular-nums text-gold">{pad(cd.h)}</b> h{" "}
-              <b className="font-bold tabular-nums text-gold">{pad(cd.m)}</b> m{" "}
-              <b className="font-bold tabular-nums text-gold">{pad(cd.s)}</b> s
-            </p>
-          ) : (
-            <p className="font-display text-[1.1rem] font-bold leading-snug text-gold" style={{ letterSpacing: "0.1em" }}>
-              IT'S OFFICIALLY YOUR DAY, AREEBA 👑
-            </p>
-          )}
+        <div className="hero-fade mt-4 min-h-[3.5rem] opacity-0">
+          <Countdown />
         </div>
-      </div>
 
-      <div className="h-cue absolute bottom-7 left-0 right-0 flex justify-center" style={{ opacity: 0 }}>
-        <p className="cue text-[0.85rem] font-semibold text-ivory/70" style={{ letterSpacing: "0.12em" }}>
-          ↓ scroll for your surprises
+        <p
+          className="hero-fade mt-10 text-[13.5px] tracking-[0.18em] text-gold/90 opacity-0"
+        >
+          <span className="inline-block" style={{ animation: "float-y 2.8s ease-in-out infinite" }}>
+            ↓ scroll for your surprises
+          </span>
         </p>
       </div>
     </section>

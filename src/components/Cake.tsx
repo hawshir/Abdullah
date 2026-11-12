@@ -1,410 +1,495 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { PointerEvent as RPointerEvent } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { gsap, ScrollTrigger } from "../lib/gsap";
-import { duckMusic } from "../lib/music";
-import { vib } from "../lib/device";
-import SectionHeading, { Rise } from "./SectionHeading";
+import SectionHeading from "./SectionHeading";
+import { gsap } from "../lib/gsap";
+import { vibrate } from "../lib/device";
 
 const TOTAL = 19;
+const VB_W = 400;
+const VB_H = 392;
 
-/** gold frosting band with drips along its bottom edge */
-function frosting(x0: number, x1: number, y: number, band: number, drips: [number, number, number][]) {
-  let d = `M${x0} ${y + 4} Q${x0} ${y} ${x0 + 4} ${y} H${x1 - 4} Q${x1} ${y} ${x1} ${y + 4} V${y + band}`;
-  [...drips].sort((a, b) => b[0] - a[0]).forEach(([x, w, l]) => {
-    d += ` H${x + w} v${l} a${w / 2} ${w / 2} 0 0 1 ${-w} 0 v${-l}`;
-  });
-  return d + ` H${x0} Z`;
+type Candle = { id: number; x: number; base: number; h: number; row: "b" | "f"; color: string };
+
+const COLORS = ["#f7f3e8", "#f3dfa6", "#f5cfd0"];
+
+const CANDLES: Candle[] = (() => {
+  const back: Omit<Candle, "id" | "color">[] = Array.from({ length: 10 }, (_, i) => ({
+    x: 101 + 22 * i,
+    base: 174,
+    h: 32,
+    row: "b" as const,
+  }));
+  const front: Omit<Candle, "id" | "color">[] = Array.from({ length: 9 }, (_, i) => ({
+    x: 112 + 22 * i,
+    base: 184,
+    h: 34,
+    row: "f" as const,
+  }));
+  return [...back, ...front]
+    .sort((a, b) => a.x - b.x || (a.row === "b" ? -1 : 1))
+    .map((c, i) => ({ ...c, id: i, color: COLORS[i % 3] }));
+})();
+
+/** Frosting band with alternating drips and scallops. */
+function frostingPath(x0: number, x1: number, y: number, n: number, lens: number[]) {
+  const w = (x1 - x0) / n;
+  let d = `M${x0} ${y} L${x1} ${y}`;
+  for (let i = n - 1; i >= 0; i--) {
+    const xr = x0 + (i + 1) * w;
+    const xl = x0 + i * w;
+    const xm = (xl + xr) / 2;
+    const len = lens[i % lens.length];
+    if (i % 2 === 0) {
+      const dw = w * 0.5;
+      d += ` L${xr} ${y + 12} Q${xr} ${y + 14} ${xm + dw / 2} ${y + 14} L${xm + dw / 2} ${y + len} A${dw / 2} ${dw / 2} 0 0 1 ${xm - dw / 2} ${y + len} L${xm - dw / 2} ${y + 14} Q${xl} ${y + 14} ${xl} ${y + 12}`;
+    } else {
+      d += ` L${xr} ${y + 12} Q${xm} ${y + 26} ${xl} ${y + 12}`;
+    }
+  }
+  return d + " Z";
 }
 
-const DRIP_TOP = frosting(50, 310, 170, 12, [
-  [62, 11, 14], [88, 9, 24], [116, 12, 12], [146, 10, 28], [176, 12, 16], [208, 9, 26], [236, 12, 12], [262, 10, 22], [288, 11, 15],
-]);
-const DRIP_BOTTOM = frosting(25, 335, 248, 13, [
-  [38, 12, 16], [70, 10, 28], [104, 13, 14], [138, 10, 24], [170, 12, 32], [204, 10, 18], [238, 13, 26], [272, 10, 14], [300, 12, 24],
-]);
+function tierPath(x0: number, x1: number, yTop: number, yBot: number, ry: number) {
+  const rx = (x1 - x0) / 2;
+  return `M${x0} ${yTop} L${x0} ${yBot} A${rx} ${ry} 0 0 0 ${x1} ${yBot} L${x1} ${yTop} Z`;
+}
+
+const FLAME = "M0 -18 C4.5 -11 5.5 -4 0 1 C-5.5 -4 -4.5 -11 0 -18 Z";
+const CORE = "M0 -10 C2 -6 2.2 -3 0 -0.5 C-2.2 -3 -2 -6 0 -10 Z";
+const SMOKE_A = "M0 0 C5 -8 -5 -14 0 -22 S5 -34 0 -42";
+const SMOKE_B = "M0 0 C-4 -9 5 -15 0 -24 S-5 -36 1 -44";
+
+type Mic = "idle" | "listening" | "off";
 
 export default function Cake() {
-  const root = useRef<HTMLElement>(null);
-  const stage = useRef<HTMLDivElement>(null);
+  const sectionRef = useRef<HTMLElement>(null);
+  const tiltRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
+  const outRef = useRef<boolean[]>(Array(TOTAL).fill(false));
+  const [out, setOut] = useState<boolean[]>(() => Array(TOTAL).fill(false));
+  const [mic, setMic] = useState<Mic>("idle");
+  const [blowing, setBlowing] = useState(false);
+  const stopMicRef = useRef<() => void>(() => {});
 
-  const candles = useMemo(() => {
-    const arr: { x: number; row: number }[] = [];
-    for (let i = 0; i < 10; i++) arr.push({ x: 68 + i * 24.89, row: 0 });
-    for (let i = 0; i < 9; i++) arr.push({ x: 80.4 + i * 24.89, row: 1 });
-    return arr
-      .sort((a, b) => a.x - b.x)
-      .map((c, idx) => {
-        const h = c.row ? 36 : 31;
-        const base = c.row ? 172 : 164;
-        return { ...c, idx, h, base, w: c.row ? 6 : 5, fy: base - h - 7 };
-      });
-  }, []);
+  const count = out.filter(Boolean).length;
+  const done = count === TOTAL;
 
-  const [lit, setLit] = useState<boolean[]>(() => Array(TOTAL).fill(true));
-  const litRef = useRef<boolean[]>(Array(TOTAL).fill(true));
-  const [listening, setListening] = useState(false);
-  const [micFailed, setMicFailed] = useState(false);
-  const timers = useRef<number[]>([]);
-  const mic = useRef<{ stop: () => void } | null>(null);
+  const frosting = useMemo(
+    () => ({
+      top: frostingPath(70, 330, 178, 8, [26, 18, 31, 17, 24, 19, 29, 18]),
+      bottom: frostingPath(30, 370, 262, 11, [28, 18, 33, 19, 25, 20, 31, 18, 27, 19, 30]),
+    }),
+    [],
+  );
 
-  const out = useCallback((i: number) => {
-    if (!litRef.current[i]) return;
-    const next = litRef.current.slice();
-    next[i] = false;
-    litRef.current = next;
-    setLit(next);
-    vib(30);
-  }, []);
-
-  const stopMic = useCallback(() => {
-    mic.current?.stop();
-    mic.current = null;
-    setListening(false);
-    duckMusic(false);
-  }, []);
-
-  /** extinguish every remaining flame, one by one, left → right */
-  const sweep = useCallback(() => {
-    let delay = 0;
-    litRef.current.forEach((on, i) => {
-      if (!on) return;
-      timers.current.push(window.setTimeout(() => out(i), delay));
-      delay += 115;
-    });
-  }, [out]);
-
-  const startMic = useCallback(async () => {
-    if (mic.current) return;
-    try {
-      if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== "function") throw new Error("nomic");
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
-      });
-      const AC: typeof AudioContext | undefined =
-        window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-      if (!AC) {
-        stream.getTracks().forEach((t) => t.stop());
-        throw new Error("noac");
-      }
-      const ac = new AC();
-      ac.resume().catch(() => {});
-      const src = ac.createMediaStreamSource(stream);
-      const an = ac.createAnalyser();
-      an.fftSize = 1024;
-      src.connect(an);
-      const buf = new Uint8Array(an.fftSize);
-      let raf = 0;
-      let alive = true;
-      let ambient = 0.02;
-      let above = 0;
-      let last = performance.now();
-      const loop = (now: number) => {
-        if (!alive) return;
-        const dt = now - last;
-        last = now;
-        an.getByteTimeDomainData(buf);
-        let sum = 0;
-        for (let i = 0; i < buf.length; i++) {
-          const v = (buf[i] - 128) / 128;
-          sum += v * v;
-        }
-        const rms = Math.sqrt(sum / buf.length);
-        const thr = Math.max(0.1, ambient * 3.2);
-        if (rms > thr) {
-          above += dt;
-        } else {
-          above = 0;
-          ambient = ambient * 0.97 + rms * 0.03;
-        }
-        if (above > 600) {
-          above = 0;
-          sweep();
-        }
-        raf = requestAnimationFrame(loop);
-      };
-      raf = requestAnimationFrame(loop);
-      mic.current = {
-        stop: () => {
-          alive = false;
-          cancelAnimationFrame(raf);
-          stream.getTracks().forEach((t) => t.stop());
-          ac.close().catch(() => {});
-        },
-      };
-      duckMusic(true);
-      setListening(true);
-    } catch {
-      // silent fallback: tapping flames always works
-      setMicFailed(true);
-      setListening(false);
-      duckMusic(false);
-    }
-  }, [sweep]);
-
-  const relight = useCallback(() => {
-    timers.current.forEach((t) => window.clearTimeout(t));
-    timers.current = [];
-    const all = Array(TOTAL).fill(true);
-    litRef.current = all;
-    setLit(all);
-  }, []);
-
-  const outCount = lit.filter((v) => !v).length;
-  const done = outCount === TOTAL;
-
+  // subtle 3D parallax tilt as the section scrolls in
   useEffect(() => {
-    if (done) stopMic();
-  }, [done, stopMic]);
-
-  // stop listening when the section leaves view or the tab hides (privacy + battery)
-  useEffect(() => {
-    const onVis = () => {
-      if (document.hidden) stopMic();
-    };
-    document.addEventListener("visibilitychange", onVis);
-    return () => {
-      document.removeEventListener("visibilitychange", onVis);
-      timers.current.forEach((t) => window.clearTimeout(t));
-      stopMic();
-    };
-  }, [stopMic]);
-
-  useLayoutEffect(() => {
-    const el = root.current;
-    if (!el) return;
+    const el = tiltRef.current;
+    const sec = sectionRef.current;
+    if (!el || !sec) return;
     const ctx = gsap.context(() => {
       gsap.fromTo(
-        stage.current!.querySelector(".cake3d"),
-        { rotateX: 32, y: 70, scale: 0.9, opacity: 0.2 },
+        el,
+        { rotateX: 30, y: 70, scale: 0.9, opacity: 0.2 },
         {
           rotateX: 0,
           y: 0,
           scale: 1,
           opacity: 1,
           ease: "none",
-          scrollTrigger: { trigger: stage.current, start: "top 95%", end: "top 45%", scrub: 0.6 },
-        }
+          scrollTrigger: { trigger: el, start: "top 98%", end: "top 40%", scrub: 1 },
+        },
       );
-      ScrollTrigger.create({
-        trigger: el,
-        start: "top bottom",
-        end: "bottom top",
-        onLeave: stopMic,
-        onLeaveBack: stopMic,
-      });
-    }, el);
+    }, sec);
     return () => ctx.revert();
+  }, []);
+
+  const extinguish = useCallback((i: number) => {
+    if (i < 0 || i >= TOTAL || outRef.current[i]) return false;
+    outRef.current[i] = true;
+    setOut([...outRef.current]);
+    vibrate(30);
+    return true;
+  }, []);
+
+  const extinguishNext = useCallback(() => {
+    const i = outRef.current.findIndex((v) => !v);
+    if (i >= 0) extinguish(i);
+  }, [extinguish]);
+
+  // tap / swipe fallback — nearest lit flame within a generous radius
+  const hitAt = useCallback(
+    (e: RPointerEvent<SVGRectElement>) => {
+      const svg = svgRef.current;
+      if (!svg) return;
+      const r = svg.getBoundingClientRect();
+      const px = ((e.clientX - r.left) * VB_W) / r.width;
+      const py = ((e.clientY - r.top) * VB_H) / r.height;
+      let best = -1;
+      let bestD = 34;
+      for (const c of CANDLES) {
+        if (outRef.current[c.id]) continue;
+        const d = Math.hypot(px - c.x, py - (c.base - c.h - 8));
+        if (d < bestD) {
+          bestD = d;
+          best = c.id;
+        }
+      }
+      if (best >= 0) extinguish(best);
+    },
+    [extinguish],
+  );
+
+  const stopMic = useCallback(() => stopMicRef.current(), []);
+
+  const startMic = useCallback(async () => {
+    if (mic === "listening") {
+      stopMic();
+      setMic("idle");
+      return;
+    }
+    try {
+      const md = navigator.mediaDevices;
+      const AC: typeof AudioContext | undefined =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (!md?.getUserMedia || !AC) {
+        setMic("off");
+        return;
+      }
+      const stream = await md.getUserMedia({
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+      });
+      const ctx = new AC();
+      await ctx.resume().catch(() => {});
+      const src = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 1024;
+      src.connect(analyser);
+      const buf = new Uint8Array(analyser.fftSize);
+
+      let raf = 0;
+      let frames = 0;
+      let base = 0;
+      let since = 0;
+      let lastAbove = 0;
+      let lastOut = 0;
+      let isBlowing = false;
+      let stopped = false;
+
+      const cleanup = () => {
+        if (stopped) return;
+        stopped = true;
+        cancelAnimationFrame(raf);
+        stream.getTracks().forEach((t) => t.stop());
+        ctx.close().catch(() => {});
+        setBlowing(false);
+      };
+      stopMicRef.current = cleanup;
+
+      const tick = (now: number) => {
+        if (stopped) return;
+        raf = requestAnimationFrame(tick);
+        if (document.hidden) return;
+        analyser.getByteTimeDomainData(buf);
+        let sum = 0;
+        for (let i = 0; i < buf.length; i++) {
+          const v = (buf[i] - 128) / 128;
+          sum += v * v;
+        }
+        const rms = Math.sqrt(sum / buf.length);
+        if (frames < 20) {
+          base += rms / 20;
+          frames++;
+          return;
+        }
+        const threshold = Math.max(0.06, base * 2.2 + 0.035);
+        let nowBlowing = false;
+        if (rms > threshold) {
+          lastAbove = now;
+          if (!since) since = now;
+          if (now - since >= 600) {
+            nowBlowing = true;
+            if (now - lastOut > 170) {
+              lastOut = now;
+              extinguishNext();
+              if (outRef.current.every(Boolean)) {
+                cleanup();
+                setMic("idle");
+                return;
+              }
+            }
+          }
+        } else if (since && now - lastAbove > 250) {
+          since = 0;
+        }
+        if (nowBlowing !== isBlowing) {
+          isBlowing = nowBlowing;
+          setBlowing(nowBlowing);
+        }
+      };
+      raf = requestAnimationFrame(tick);
+      setMic("listening");
+    } catch {
+      // denied / unavailable / in-app browser → silent fallback to tapping
+      setMic("off");
+    }
+  }, [mic, stopMic, extinguishNext]);
+
+  // stop the mic when finished, hidden, or unmounted
+  useEffect(() => {
+    if (done) {
+      stopMic();
+      setMic((m) => (m === "listening" ? "idle" : m));
+    }
+  }, [done, stopMic]);
+
+  useEffect(() => {
+    const onVis = () => {
+      if (document.hidden) {
+        stopMic();
+        setMic((m) => (m === "listening" ? "idle" : m));
+      }
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      document.removeEventListener("visibilitychange", onVis);
+      stopMic();
+    };
   }, [stopMic]);
 
-  const onTap = (e: React.PointerEvent<SVGRectElement>) => {
-    const svg = svgRef.current;
-    if (!svg) return;
-    const r = svg.getBoundingClientRect();
-    const sx = ((e.clientX - r.left) / r.width) * 360;
-    const sy = ((e.clientY - r.top) / r.height) * 360;
-    let best = -1;
-    let bd = 52;
-    for (const c of candles) {
-      if (!litRef.current[c.idx]) continue;
-      const d = Math.hypot(c.x - sx, c.fy - sy);
-      if (d < bd) {
-        bd = d;
-        best = c.idx;
-      }
-    }
-    if (best >= 0) out(best);
+  const relight = () => {
+    outRef.current = Array(TOTAL).fill(false);
+    setOut([...outRef.current]);
   };
 
   return (
-    <section id="cake" ref={root} className="relative flex min-h-[100svh] flex-col items-center px-5 pb-20 pt-24 text-center">
-      <div className="relative z-[2] flex flex-col items-center gap-3">
-        <SectionHeading text="First, the ritual." />
-        <Rise as="p" className="sec-sub">
-          A birthday cake isn't official until the candles die.
-        </Rise>
+    <section
+      id="cake"
+      ref={sectionRef}
+      className="flex flex-col items-center justify-center gap-8 px-4 py-[12svh]"
+    >
+      {/* scene dimmer for the wish moment */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 z-0 transition-opacity duration-[1800ms] ease-out"
+        style={{
+          opacity: done ? 1 : 0,
+          background:
+            "linear-gradient(180deg, transparent 0%, rgba(2,2,10,.78) 18%, rgba(2,2,10,.78) 82%, transparent 100%)",
+        }}
+      />
+
+      <div className="relative z-10">
+        <SectionHeading title="First, the ritual." sub="A birthday cake isn't official until the candles die." />
       </div>
 
-      <div ref={stage} className="relative z-[2] mt-8 w-full max-w-[420px]" style={{ perspective: 900 }}>
-        <div className="cake3d" style={{ transformOrigin: "50% 100%" }}>
-          <svg ref={svgRef} viewBox="0 0 360 360" className="block w-full select-none" style={{ touchAction: "manipulation", overflow: "visible" }} role="img" aria-label="A birthday cake with 19 candles">
+      <div className="relative z-10 flex w-full flex-col items-center" style={{ perspective: 900 }}>
+        <div
+          aria-hidden="true"
+          className="absolute left-1/2 top-[40%] h-[80%] w-[110%] -translate-x-1/2 -translate-y-1/2 rounded-full transition-opacity duration-[1800ms]"
+          style={{
+            background: "radial-gradient(closest-side, rgba(245,215,110,.16), transparent 70%)",
+            opacity: done ? 0.2 : 1,
+          }}
+        />
+        <div ref={tiltRef} className="relative" style={{ transformStyle: "preserve-3d", willChange: "transform" }}>
+          <svg
+            ref={svgRef}
+            viewBox={`0 0 ${VB_W} ${VB_H}`}
+            className={`no-select h-auto w-[min(92vw,420px)] ${blowing ? "blowing" : ""}`}
+            role="img"
+            aria-label={`Birthday cake with ${TOTAL - count} lit candles`}
+          >
             <defs>
-              <linearGradient id="ckGold" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0" stopColor="#fff1bf" />
-                <stop offset="0.35" stopColor="#f5d76e" />
+              <linearGradient id="ck-gold" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stopColor="#fff1b0" />
+                <stop offset="0.45" stopColor="#f5d76e" />
                 <stop offset="1" stopColor="#b8902a" />
               </linearGradient>
-              <linearGradient id="ckTop" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0" stopColor="#6a3358" />
-                <stop offset="1" stopColor="#3a1b3c" />
+              <linearGradient id="ck-goldH" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0" stopColor="#b8902a" />
+                <stop offset="0.5" stopColor="#fff1b0" />
+                <stop offset="1" stopColor="#b8902a" />
               </linearGradient>
-              <linearGradient id="ckBot" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0" stopColor="#57284a" />
-                <stop offset="1" stopColor="#2b1431" />
+              <linearGradient id="ck-top" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0" stopColor="#e6cf9c" />
+                <stop offset="0.35" stopColor="#fbefd2" />
+                <stop offset="1" stopColor="#d9bd80" />
               </linearGradient>
-              <linearGradient id="ckSide" x1="0" y1="0" x2="1" y2="0">
-                <stop offset="0" stopColor="#000" stopOpacity=".38" />
-                <stop offset=".25" stopColor="#000" stopOpacity="0" />
-                <stop offset=".75" stopColor="#000" stopOpacity="0" />
-                <stop offset="1" stopColor="#000" stopOpacity=".42" />
+              <linearGradient id="ck-bot" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0" stopColor="#cdb078" />
+                <stop offset="0.35" stopColor="#f1dfb8" />
+                <stop offset="1" stopColor="#bd9f62" />
               </linearGradient>
-              <linearGradient id="ckPlate" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0" stopColor="#f5d76e" />
-                <stop offset="1" stopColor="#8f6d17" />
+              <linearGradient id="ck-plate" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stopColor="rgba(255,255,255,.55)" />
+                <stop offset="1" stopColor="rgba(212,175,55,.35)" />
               </linearGradient>
-              <linearGradient id="ckCandle" x1="0" y1="0" x2="1" y2="0">
-                <stop offset="0" stopColor="#e9dcc0" />
-                <stop offset=".45" stopColor="#fffaf0" />
-                <stop offset="1" stopColor="#d9c9a3" />
-              </linearGradient>
-              <radialGradient id="flGlow">
-                <stop offset="0" stopColor="#ffd45e" stopOpacity=".6" />
-                <stop offset="1" stopColor="#ffb02e" stopOpacity="0" />
+              <radialGradient id="ck-glow">
+                <stop offset="0" stopColor="rgba(255,214,120,.7)" />
+                <stop offset="1" stopColor="rgba(255,214,120,0)" />
               </radialGradient>
-              <linearGradient id="flBody" x1="0" y1="1" x2="0" y2="0">
+              <linearGradient id="ck-flame" x1="0" y1="1" x2="0" y2="0">
                 <stop offset="0" stopColor="#ff9d2e" />
-                <stop offset=".5" stopColor="#ffc94a" />
-                <stop offset="1" stopColor="#fff2a8" />
+                <stop offset="0.55" stopColor="#ffd25a" />
+                <stop offset="1" stopColor="#fff6cc" />
               </linearGradient>
-              <radialGradient id="tpGlow">
-                <stop offset="0" stopColor="#f5d76e" stopOpacity=".35" />
-                <stop offset="1" stopColor="#f5d76e" stopOpacity="0" />
-              </radialGradient>
+              <pattern id="ck-stripe" width="5" height="9" patternUnits="userSpaceOnUse" patternTransform="rotate(35)">
+                <rect width="5" height="3.2" fill="rgba(212,175,55,.6)" />
+              </pattern>
             </defs>
 
             {/* plate */}
-            <ellipse cx="180" cy="342" rx="172" ry="17" fill="url(#ckPlate)" />
-            <ellipse cx="180" cy="338" rx="164" ry="13" fill="#f7f3e8" opacity=".14" />
-            <ellipse cx="180" cy="336" rx="164" ry="12" fill="none" stroke="rgba(255,246,207,.5)" strokeWidth="1" />
+            <ellipse cx="200" cy="362" rx="192" ry="20" fill="rgba(0,0,0,.35)" />
+            <ellipse cx="200" cy="356" rx="192" ry="20" fill="#9c7a22" />
+            <ellipse cx="200" cy="351" rx="192" ry="20" fill="url(#ck-plate)" stroke="rgba(245,215,110,.8)" strokeWidth="1.2" />
+            <ellipse cx="200" cy="351" rx="170" ry="15" fill="none" stroke="rgba(255,255,255,.25)" strokeWidth="0.8" />
 
             {/* bottom tier */}
-            <rect x="25" y="248" width="310" height="90" rx="10" fill="url(#ckBot)" />
-            <rect x="25" y="248" width="310" height="90" rx="10" fill="url(#ckSide)" />
-            <path d="M25 300 H335" stroke="rgba(245,215,110,.45)" strokeWidth="1.4" strokeDasharray="2 5" strokeLinecap="round" />
-            <rect x="25" y="248" width="310" height="90" rx="10" fill="none" stroke="rgba(212,175,55,.45)" />
-            <path d={DRIP_BOTTOM} fill="url(#ckGold)" />
+            <path d={tierPath(30, 370, 262, 346, 14)} fill="url(#ck-bot)" />
+            <path d={frosting.bottom} fill="url(#ck-gold)" />
+            <ellipse cx="200" cy="262" rx="170" ry="13" fill="#fbefd2" opacity="0.9" />
+            {Array.from({ length: 19 }).map((_, i) => (
+              <circle
+                key={i}
+                cx={47 + i * 17.6}
+                cy={330 + Math.sin((i / 18) * Math.PI) * 12.5}
+                r="3"
+                fill="#fff8e1"
+                stroke="rgba(184,144,42,.7)"
+                strokeWidth="0.8"
+              />
+            ))}
 
             {/* top tier */}
-            <rect x="50" y="170" width="260" height="80" rx="9" fill="url(#ckTop)" />
-            <rect x="50" y="170" width="260" height="80" rx="9" fill="url(#ckSide)" />
-            <path d="M50 226 H310" stroke="rgba(245,215,110,.45)" strokeWidth="1.4" strokeDasharray="2 5" strokeLinecap="round" />
-            <rect x="50" y="170" width="260" height="80" rx="9" fill="none" stroke="rgba(212,175,55,.45)" />
-            <path d={DRIP_TOP} fill="url(#ckGold)" />
+            <path d={tierPath(70, 330, 178, 262, 12)} fill="url(#ck-top)" />
+            <path d={frosting.top} fill="url(#ck-gold)" />
+            <ellipse cx="200" cy="178" rx="130" ry="12" fill="url(#ck-top)" stroke="rgba(212,175,55,.55)" strokeWidth="0.8" />
+            <path d="M70 236 Q200 254 330 236" fill="none" stroke="url(#ck-goldH)" strokeWidth="2" opacity="0.7" />
 
             {/* topper */}
-            <g className="topper">
-              <circle cx="180" cy="46" r="52" fill="url(#tpGlow)" />
-              <circle cx="180" cy="46" r="27" fill="#1a1230" stroke="url(#ckGold)" strokeWidth="2.6" />
-              <circle cx="180" cy="46" r="22" fill="none" stroke="rgba(245,215,110,.55)" strokeWidth=".8" strokeDasharray="1.5 2.5" />
-              <text x="180" y="47" textAnchor="middle" dominantBaseline="central" fontFamily="'Playfair Display',serif" fontWeight="900" fontSize="25" fill="url(#ckGold)">
-                19
-              </text>
-              <path d="M180 74 V92" stroke="url(#ckGold)" strokeWidth="1.6" strokeLinecap="round" opacity=".7" />
-            </g>
+            <rect x="198.5" y="96" width="3" height="84" fill="url(#ck-goldH)" />
+            <circle cx="200" cy="68" r="31" fill="url(#ck-gold)" stroke="#8a6416" strokeWidth="1" />
+            <circle cx="200" cy="68" r="26" fill="none" stroke="rgba(90,60,5,.45)" strokeWidth="1" />
+            <text
+              x="200"
+              y="79"
+              textAnchor="middle"
+              fontFamily="'Playfair Display', Georgia, serif"
+              fontWeight={900}
+              fontSize="32"
+              fill="#4a3408"
+            >
+              19
+            </text>
 
-            {/* candles: back row first, then front row */}
-            {[0, 1].map((row) =>
-              candles
-                .filter((c) => c.row === row)
-                .map((c) => (
-                  <g key={c.idx} opacity={row === 0 ? 0.88 : 1}>
-                    <rect x={c.x - c.w / 2} y={c.base - c.h} width={c.w} height={c.h} rx={c.w / 2.4} fill="url(#ckCandle)" />
-                    <path
-                      d={`M${c.x - c.w / 2} ${c.base - c.h * 0.3} l${c.w} -4 M${c.x - c.w / 2} ${c.base - c.h * 0.62} l${c.w} -4`}
-                      stroke="#d4af37"
-                      strokeWidth="1.2"
-                      opacity=".8"
-                    />
-                    <path d={`M${c.x} ${c.base - c.h} v-3`} stroke="#3a2a14" strokeWidth="1" strokeLinecap="round" />
-                  </g>
-                ))
-            )}
-
-            {/* flames + smoke */}
-            {candles.map((c) => {
-              const on = lit[c.idx];
+            {/* candles */}
+            {CANDLES.map((c) => {
+              const top = c.base - c.h;
+              const isOut = out[c.id];
               return (
-                <g key={`f${c.idx}`} transform={`translate(${c.x} ${c.fy + 3})`}>
-                  <g
-                    className={`flame${on ? "" : " flame-out"}`}
-                    style={{ animationDelay: `${-((c.idx * 0.37) % 1.3)}s`, animationDuration: `${1.1 + (c.idx % 5) * 0.14}s` }}
-                  >
-                    <circle r="12" fill="url(#flGlow)" />
-                    <path d="M0 -9.5 C4.2 -4.5 4.6 1 0 4.8 C-4.6 1 -4.2 -4.5 0 -9.5Z" fill="url(#flBody)" />
-                    <path d="M0 -3.4 C2 -1 2.1 1.6 0 3.2 C-2.1 1.6 -2 -1 0 -3.4Z" fill="#fffbe8" />
+                <g key={c.id}>
+                  <rect x={c.x - 2.6} y={top} width="5.2" height={c.h} rx="1.6" fill={c.color} />
+                  <rect x={c.x - 2.6} y={top} width="5.2" height={c.h} rx="1.6" fill="url(#ck-stripe)" />
+                  <rect x={c.x - 0.5} y={top - 3} width="1" height="3.4" fill="#2b1c0a" />
+                  <g transform={`translate(${c.x} ${top - 2})`}>
+                    <g className={`flame ${isOut ? "out" : ""}`} style={{ animationDelay: `${-((c.id * 0.37) % 1.4)}s` }}>
+                      <circle r="16" cy="-9" fill="url(#ck-glow)" />
+                      <path d={FLAME} fill="url(#ck-flame)" />
+                      <path d={CORE} fill="#fffdf0" opacity="0.9" />
+                    </g>
+                    {isOut && (
+                      <>
+                        <path className="smoke" d={SMOKE_A} fill="none" stroke="rgba(247,243,232,.6)" strokeWidth="2" strokeLinecap="round" />
+                        <path
+                          className="smoke"
+                          d={SMOKE_B}
+                          fill="none"
+                          stroke="rgba(247,243,232,.4)"
+                          strokeWidth="1.6"
+                          strokeLinecap="round"
+                          style={{ animationDelay: "0.25s" }}
+                        />
+                      </>
+                    )}
                   </g>
-                  {!on && (
-                    <path
-                      className="wisp"
-                      d="M0 2 c-4 -7 4 -12 0 -19 s-4 -10 1.5 -17"
-                      fill="none"
-                      stroke="rgba(247,243,232,.6)"
-                      strokeWidth="1.6"
-                      strokeLinecap="round"
-                    />
-                  )}
                 </g>
               );
             })}
 
-            {/* forgiving tap layer: any tap near the flames blows the nearest lit one */}
-            <rect x="20" y="62" width="320" height="125" fill="transparent" onPointerDown={onTap} style={{ cursor: "pointer" }} />
+            {/* generous hit area for tap / swipe */}
+            <rect
+              x="40"
+              y="80"
+              width="320"
+              height="130"
+              fill="transparent"
+              style={{ touchAction: "pan-y", cursor: "pointer" }}
+              onPointerDown={hitAt}
+              onPointerMove={(e) => {
+                if (e.buttons || e.pointerType === "touch") hitAt(e);
+              }}
+            />
           </svg>
         </div>
       </div>
 
-      <div className="relative z-[20] mt-6 flex flex-col items-center gap-3">
-        <p className="font-display text-[1.5rem] font-bold text-gold" style={{ letterSpacing: "0.12em" }} aria-live="polite">
-          <span className="tabular-nums">{outCount}</span> / {TOTAL}
+      {/* counter + controls */}
+      <div className="relative z-10 flex flex-col items-center gap-4 text-center">
+        <p className="font-display text-3xl font-bold tracking-[0.12em] text-gold" aria-live="polite">
+          {count} / {TOTAL}
         </p>
 
-        {!done && (
-          <button type="button" className={`btn-gold${listening ? " listening" : ""}`} onClick={startMic}>
-            💨 blow for real
+        {!done && mic !== "off" && (
+          <button
+            type="button"
+            onClick={startMic}
+            className="glass no-select min-h-[52px] px-7 text-[15.5px] font-semibold tracking-wide text-ivory transition-transform duration-300 active:scale-95"
+            style={mic === "listening" ? { borderColor: "rgba(245,215,110,.9)", boxShadow: "0 0 24px rgba(245,215,110,.3)" } : undefined}
+          >
+            {mic === "listening" ? "🎤 listening… blow now" : "💨 blow for real"}
           </button>
         )}
-        {micFailed && !done && (
-          <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 1 }} className="text-[0.85rem] font-medium text-ivory/55">
-            tap a flame to blow it out
-          </motion.p>
+        {!done && (
+          <p className="max-w-[17rem] text-[13px] leading-relaxed text-ivory/55">
+            {mic === "off" ? "Tap each flame to blow it out." : "…or just tap each flame."}
+          </p>
         )}
 
-        <div className="min-h-[7.5rem] pt-2">
+        <div className="min-h-[8.5rem] max-w-[22rem]">
           <AnimatePresence>
             {done && (
               <motion.div
                 key="wish"
-                initial={{ opacity: 0, y: 24, filter: "blur(10px)" }}
-                animate={{ opacity: 1, y: 0, filter: "blur(0px)", transition: { duration: 1.8, delay: 0.9, ease: [0.22, 1, 0.36, 1] } }}
-                exit={{ opacity: 0, transition: { duration: 0.4 } }}
-                className="max-w-[20rem] font-display italic text-ivory"
-                style={{ fontSize: "1.3rem", lineHeight: 1.6, textShadow: "0 0 24px rgba(245,215,110,.35)" }}
+                initial={{ opacity: 0, y: 18, filter: "blur(8px)" }}
+                animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 1.8, delay: 0.9, ease: [0.22, 1, 0.36, 1] }}
+                className="px-2"
               >
-                Close your eyes. Make a wish. 🌠
-                <br />
-                <span className="text-gold">It's already on its way to coming true.</span>
+                <p className="font-display text-[clamp(1.5rem,7vw,2.1rem)] font-bold leading-snug text-gold" style={{ textShadow: "0 0 24px rgba(245,215,110,.45)" }}>
+                  Close your eyes. Make a wish. 🌠
+                </p>
+                <p className="mt-3 text-[16px] italic leading-relaxed text-ivory/85">
+                  It's already on its way to coming true.
+                </p>
               </motion.div>
             )}
           </AnimatePresence>
         </div>
 
-        <button type="button" className="btn-ghost" onClick={relight}>
+        <button
+          type="button"
+          onClick={relight}
+          className="no-select min-h-12 px-4 text-[13.5px] tracking-wide text-ivory/60 underline decoration-[rgba(212,175,55,.4)] underline-offset-4 transition-opacity duration-500"
+          style={{ opacity: count > 0 ? 1 : 0, pointerEvents: count > 0 ? "auto" : "none" }}
+          tabIndex={count > 0 ? 0 : -1}
+        >
           relight candles
         </button>
       </div>
-
-      {/* scene dims at 19/19 */}
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 z-[10]"
-        style={{
-          background: "rgba(2,2,10,.72)",
-          opacity: done ? 1 : 0,
-          transition: "opacity 1.8s cubic-bezier(.22,1,.36,1)",
-          WebkitMaskImage: "linear-gradient(transparent, #000 18%, #000 82%, transparent)",
-          maskImage: "linear-gradient(transparent, #000 18%, #000 82%, transparent)",
-        }}
-      />
     </section>
   );
 }

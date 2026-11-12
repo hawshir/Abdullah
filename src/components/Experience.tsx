@@ -1,41 +1,34 @@
 import { useEffect } from "react";
-import { ScrollTrigger } from "../lib/gsap";
-import Starfield from "./Starfield";
-import MuteToggle from "./MuteToggle";
 import Hero from "./Hero";
 import Cake from "./Cake";
 import ShootingStars from "./ShootingStars";
 import Certificate from "./Certificate";
-import LetterSection from "./LetterSection";
+import SealedLetter from "./SealedLetter";
 import Finale from "./Finale";
+import { ScrollTrigger } from "../lib/gsap";
 
 export default function Experience() {
   useEffect(() => {
     const refresh = () => ScrollTrigger.refresh();
-    const fonts = (document as Document & { fonts?: { ready: Promise<unknown> } }).fonts;
-    fonts?.ready.then(refresh).catch(() => {});
+    const t1 = window.setTimeout(refresh, 400);
+    const t2 = window.setTimeout(refresh, 2600);
+    document.fonts?.ready.then(refresh).catch(() => {});
     window.addEventListener("load", refresh);
-    const t = window.setTimeout(refresh, 2600);
     return () => {
+      window.clearTimeout(t1);
+      window.clearTimeout(t2);
       window.removeEventListener("load", refresh);
-      window.clearTimeout(t);
     };
   }, []);
 
   return (
-    <>
-      <Starfield />
-      <div className="exp">
-        <MuteToggle />
-        <main>
-          <Hero />
-          <Cake />
-          <ShootingStars />
-          <Certificate />
-          <LetterSection />
-          <Finale />
-        </main>
-      </div>
-    </>
+    <main className="relative z-10 w-full overflow-x-clip" style={{ animation: "fade-in-slow 1.6s ease both" }}>
+      <Hero />
+      <Cake />
+      <ShootingStars />
+      <Certificate />
+      <SealedLetter />
+      <Finale />
+    </main>
   );
 }
