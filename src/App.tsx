@@ -1,68 +1,43 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
-import { Background, Grain, Starfield } from "./components/Background";
+import Background from "./components/Background";
 import Gate from "./components/Gate";
-import { celebrate, preloadConfetti, vibrate } from "./lib/device";
-import { music } from "./lib/music";
+import { loadExperience } from "./lib/loaders";
 
-const loadExperience = () => import("./Experience");
 const Experience = lazy(loadExperience);
 
-type Phase = "locked" | "opening" | "open";
-
 export default function App() {
-  const [phase, setPhase] = useState<Phase>("locked");
-  const [revealed, setRevealed] = useState(false);
-  const [ambient, setAmbient] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [gateGone, setGateGone] = useState(false);
 
-  // heavy animation code is only touched after the first keypad interaction / unlock
-  const warm = useCallback(() => {
-    preloadConfetti().catch(() => {});
-    loadExperience().catch(() => {});
+  // lock scroll while the gate is up
+  useEffect(() => {
+    document.documentElement.classList.add("lock");
+    return () => document.documentElement.classList.remove("lock");
   }, []);
 
+  // pause CSS animations when the tab is hidden
   useEffect(() => {
-    // paint the gate first, then bring the ambient canvas in
-    const id = window.setTimeout(() => setAmbient(true), 400);
-    return () => window.clearTimeout(id);
+    const f = () => document.documentElement.classList.toggle("paused", document.hidden);
+    document.addEventListener("visibilitychange", f);
+    return () => document.removeEventListener("visibilitychange", f);
   }, []);
 
-  useEffect(() => {
-    document.documentElement.classList.toggle("locked", phase !== "open");
-  }, [phase]);
-
-  useEffect(() => {
-    const onVis = () => document.documentElement.classList.toggle("tab-hidden", document.hidden);
-    document.addEventListener("visibilitychange", onVis);
-    return () => document.removeEventListener("visibilitychange", onVis);
-  }, []);
-
-  // Runs synchronously inside the 4th-digit tap → audio is allowed to start.
-  const handleUnlock = useCallback(() => {
-    music.start();
-    vibrate(30);
-    void celebrate();
+  const onUnlock = useCallback(() => setOpen(true), []);
+  const onDone = useCallback(() => {
+    setGateGone(true);
+    document.documentElement.classList.remove("lock");
     window.scrollTo(0, 0);
-    setPhase("opening");
   }, []);
 
   return (
     <>
       <Background />
-      {ambient && <Starfield />}
-      {phase !== "locked" && (
+      {open && (
         <Suspense fallback={null}>
-          <Experience revealed={revealed} />
+          <Experience />
         </Suspense>
       )}
-      {phase !== "open" && (
-        <Gate
-          onUnlock={handleUnlock}
-          onReveal={() => setRevealed(true)}
-          onDone={() => setPhase("open")}
-          onWarm={warm}
-        />
-      )}
-      <Grain />
+      {!gateGone && <Gate onUnlock={onUnlock} onDone={onDone} />}
     </>
   );
 }

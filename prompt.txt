@@ -1,0 +1,144 @@
+# BUILD: "For Areeba" — a cinematic interactive 17th birthday experience
+
+**Role:** Act as an elite creative front-end engineer with Awwwards-level motion taste. Build a phone-first, scroll-driven, interactive birthday experience for a girl named Areeba. Quality bar: it must feel like a paid custom gift, not a template. Do not summarize, skip, or simplify any section. Every text string below is FINAL copy — use verbatim, never paraphrase, no lorem ipsum. The only placeholder allowed is [HASHIR KHAN].
+
+## TECH STACK (pick the best you can execute flawlessly, in this order)
+1. **Preferred:** Vite + React 18 + Tailwind CSS + GSAP (ScrollTrigger) + Framer Motion + canvas-confetti. Use Three.js for the starfield/fireworks only if it stays 60fps on a mid-range phone; otherwise a hand-rolled 2D canvas particle engine is preferred over a laggy Three.js.
+2. **Also acceptable:** one self-contained HTML file loading GSAP + canvas-confetti via CDN.
+
+**Hard constraints (non-negotiable):**
+- Pure static site: no backend, no database. Must deploy to Netlify/Vercel with zero config.
+- Zero external media: no photos, no videos, no audio files. Every visual is CSS/SVG/canvas; music is synthesized in-browser (spec below).
+- Mobile-first at ~390×844. Must be perfect in iOS Safari, Android Chrome, and the WhatsApp in-app browser. No horizontal scroll at any width. Tap targets ≥48px. 60fps or it doesn't ship.
+- Screen 1 paints instantly; lazy-load heavy animation code until after unlock.
+- Graceful degradation everywhere: mic, vibration, gyroscope — every optional device feature must fail SILENTLY to a fallback. Never show Areeba an error.
+- Zero console errors.
+
+## ART DIRECTION — "Midnight Gold" (cinematic pass)
+- Fixed background: `linear-gradient(180deg,#050510,#0b0b22 50%,#050510)` plus 2–3 huge ultra-subtle aurora glow blobs (radial gold/indigo, opacity ≤0.12, 20s slow drift).
+- Palette: gold #f5d76e / #d4af37, ivory #f7f3e8, borders rgba(212,175,55,.35).
+- Fonts (Google Fonts): "Playfair Display" 700/900 headings (letterspaced caps), "Quicksand" body/UI, italics for Roman Urdu lines.
+- The name "AREEBA" always renders as animated shimmering gold: gradient text with a slowly moving highlight.
+- Global film-grain overlay (SVG feTurbulence, opacity ~0.04, pointer-events:none) for cinematic texture.
+- Cards: glassmorphism — rgba(255,255,255,.04), 1px gold border, radius 24, backdrop-blur 12px.
+- Motion language: cubic-bezier(.22,1,.36,1), slow luxurious timings, letter-stagger reveals, gentle scroll parallax via ScrollTrigger. Nothing snappy/bouncy except confetti and fireworks.
+- Ambient layer: full-screen canvas, ~60 gold star particles drifting upward with sine-twinkle, two depth layers (size/speed). If device orientation is available WITHOUT a permission prompt, add ±6px tilt parallax; otherwise skip silently.
+
+## GLOBAL
+- `<meta name="viewport" content="width=device-width, initial-scale=1">`; sections `min-height:100svh`. Do NOT use CSS scroll-snap — use GSAP-scrubbed choreography instead; the finger must never feel trapped.
+- Persistent 🔊/🔇 toggle top-right after unlock (48px target).
+- `navigator.vibrate(30)` at: unlock, each candle extinguished, letter seal opening (Android; silently ignore elsewhere).
+
+## SCREEN 1 — THE LOCKED GATE
+Centered glowing gold wax-seal emblem (SVG circle, "A" monogram), soft pulse.
+- Heading: "FOR AREEBA'S EYES ONLY"
+- Sub: "This page is sealed. It only opens for one person in the whole world."
+- 4 empty code slots + 0–9 keypad with backspace. Hint below: "Hint: the year it all began ✨"
+- Code is 2008, auto-checked at the 4th digit.
+  - Wrong: GSAP shake (x ±10px, 0.4s), slots flash rgba(255,80,80,.25), cycle messages:
+    1. "Nice try 🙃"  2. "Not even close. When does the world's favorite person celebrate?"  3. "One year changed everything. Think. 😉"
+  - Correct: seal cracks (scale 1→1.15 + white-gold flash overlay), gold/ivory/champagne confetti burst, music starts on this exact tap, crossfade to Screen 2.
+
+## SCREEN 2 — HERO
+Letter-by-letter reveal (stagger 0.04s, blur-to-sharp + rise):
+- small: "30 · 11 · 2008 — the day the world got lucky"
+- huge: "HAPPY BIRTHDAY"
+- hugest: "AREEBA" (shimmering gold)
+- Giant elegant "17" with tiny sparkle particles slowly orbiting it.
+- Live countdown to the NEXT 30 November 00:00 local time:
+  - before: "your day arrives in ___ d ___ h ___ m ___ s"
+  - on the day: "IT'S OFFICIALLY YOUR DAY, AREEBA 👑"
+- Scroll cue: "↓ scroll for your surprises" (gentle infinite float).
+
+## SCREEN 3 — THE CAKE (mic-blow feature)
+- Heading: "First, the ritual."
+- Sub: "A birthday cake isn't official until the candles die."
+- CSS/SVG cake: plate, two tiers with golden frosting drips, 17 slim candles in two staggered rows, flickering flames, golden "17" topper. Subtle 3D parallax tilt as the section scrolls in.
+- Primary: button "💨 blow for real" → request microphone, analyze volume (Web Audio AnalyserNode); a sustained breath (above threshold ~600ms) extinguishes remaining flames one-by-one left→right with smoke-wisp animations.
+- Fallback (mic denied/unavailable/in-app browser): tap each flame to blow it out individually. NO error UI ever — silent fallback.
+- Counter "x / 17". At 17/17: scene dims, fade in: "Close your eyes. Make a wish. 🌠 It's already on its way to coming true."
+- Small text button "relight candles" to replay.
+
+## SCREEN 4 — SHOOTING STARS
+- Heading: "Now, look up."
+- Sub: "A shooting star crosses this sky every few seconds. Catch it and tap it before it's gone."
+- Every 4–7s: comet (glowing head, gradient tail) streaks across at a random height, ~2.5s crossing, ease-out, with a generous invisible tap zone ≥64px.
+- Tap: sparkle burst at the contact point + glass-pill toast fading in/out, random line:
+  "Wish received by the universe 🌟" / "Logged in the stars ✅" / "The sky says: coming right up ✨" / "Consider it done 🌠"
+- Spawns only while the section is in view (ScrollTrigger toggle).
+
+## SCREEN 5 — THE CERTIFICATE
+Heading: "Now, some official business."
+Ornate card: double gold border, SVG corner flourishes, gold wax seal bottom-right, slow diagonal shine-sweep every ~6s, subtle pointer-drag tilt (max 6°, springs back). Text verbatim:
+
+✦ CERTIFICATE OF BRILLIANCE ✦
+Proudly awarded to
+AREEBA
+for an outstanding result in HSSC-I (Pre-Medical) —
+earned through sleepless nights, relentless effort,
+and a mind that refuses to settle for average.
+
+Next mission: HSSC-II. Then MDCAT.
+Final destination: Dr. Areeba. 🩺
+
+Awarded on the occasion of her 17th birthday · 30 November
+Signed, [HASHIR] — who always knew you'd do this.
+
+## SCREEN 6 — THE SEALED LETTER
+- Heading: "One last thing. It's sealed."
+- Sub: "Press & hold the golden seal until the ring fills. Some things are worth the wait."
+- CSS 3D envelope with wax seal. Press-and-hold 1.5s: SVG ring fills around the seal; on complete: vibrate(30), flap rotates open (rotateX with perspective), letter slides up and expands (Framer Motion layout animation) into a full-screen scrollable overlay — warm ivory paper (#f7f1e3) with subtle fiber texture, dark ink text (#2b2417), Playfair Display for greeting and signature.
+- Each paragraph fades/rises in as it enters the overlay's viewport — reading rhythm, not a wall of text.
+- Letter text VERBATIM (preserve line breaks):
+
+---
+My dearest Areeba,
+
+Some people wait all year for their birthday to feel special. You make every ordinary day around you feel special — the birthday is just the world's excuse to celebrate you out loud.
+
+Seventeen. SubhanAllah. Happy birthday! May this year be the softest, kindest, most beautiful chapter of your life so far.
+
+And can we please talk about your HSSC-I result? Brilliant — of course it was. You didn't get lucky; you earned every single mark, late night by late night, page by page. I'm so proud of you I'd put it on a billboard if I could. Mubarak ho! 🎉 But knowing you, this is just the opening scene. HSSC-II, then MDCAT, then a white coat with HASHIR stitched on it. "Dr. Areeba" has a beautiful ring to it, doesn't it?
+
+And now — my dua for you. Read it slowly; it's from the deepest part of my heart:
+
+Allah Pak aapko sehat o tandrusti ata farmaye, aapke ghar mein khushiyon ke din baraste rahein, aur aapki har jaiz dua qubool farmaye. Aameen.
+
+Ya Allah, make her a source of healing for everyone she meets. Let her hands carry shifa, her heart carry mercy. Make the road to MDCAT smooth for her, put barakah in every hour she studies, and when her result comes, let her score speak so loudly that her family's prayers turn into happy tears. Make her Dr. Areeba — the kind of doctor whose kindness starts healing patients before the medicine even does.
+
+May Allah grant you an even higher score in HSSC-II, success in MDCAT beyond everything you've prayed for, and a life full of noor, peace, and ajr. Aameen, summa Aameen. 🤲
+
+Never dim your light for anyone. The world is waiting for Dr. Areeba.
+
+Happy birthday, superstar. See you at the top.
+
+— From your friend who believes in you more than you know,
+[HASHIR]
+---
+- The three dua paragraphs (starting "Allah Pak", "Ya Allah", and "May Allah grant") are set apart: slightly larger serif + delicate gold left border — the visual heart of the letter.
+- × close button (48px) returns to the page.
+
+## SCREEN 7 — FINALE
+Full-screen canvas fireworks (gold/ivory/champagne, rising comets, burst every ~1.2s). Copy verbatim:
+- "This whole page is just code and stardust."
+- "YOU are the actual miracle."
+- Big glowing: "Happy 17th Birthday, AREEBA 🤍"
+- small: "made with love, duas & a little code — [HASHIR]"
+- Button: "↺ experience it all again" → smooth scroll to Screen 2, music keeps playing.
+
+## MUSIC — Web Audio API (no files; starts ONLY on the unlock tap)
+Soft music-box/celesta "Happy Birthday":
+- Voice: sine + slightly detuned triangle per note, exponential decay ~1.2s, gentle stereo widening, master gain 0.15 with 1s fade-in.
+- Tempo: quarter ≈ 90 BPM with soft lilt (±5% humanized timing).
+- Melody (note·beats):
+  G4·0.75 G4·0.25 A4·1 G4·1 C5·1 B4·2 | G4·0.75 G4·0.25 A4·1 G4·1 D5·1 C5·2 | G4·0.75 G4·0.25 G5·1 E5·1 C5·1 B4·1 A4·2 | F5·0.75 F5·0.25 E5·1 C5·1 D5·1 C5·2
+- Loop with ~3s pause. 🔊 toggle suspends/resumes the AudioContext.
+
+## QA CHECKLIST (verify before delivering)
+- 390×844: no horizontal scroll anywhere; letter overlay scrolls independently.
+- Unlock: confetti + music fire on the SAME tap, no double-trigger.
+- Mic-blow path AND tap-fallback path both work (test by denying mic); no error UI in either.
+- Long-press never triggers text selection/context menu; releasing early or moving finger >10px cancels cleanly.
+- Animations + audio pause on tab hide (visibilitychange).
+- Lighthouse mobile performance ≥80 at the gate screen.
+- Zero console errors/warnings.
